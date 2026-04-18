@@ -1,4 +1,5 @@
 node_modules/
+package-lock.json
 data/cookies.json
 data/last-response.html
 data/history.db
