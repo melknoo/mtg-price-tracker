@@ -29,6 +29,7 @@ export function parsePriceText(text) {
 export function parsePrices(html) {
   const $ = cheerio.load(html);
   const prices = [];
+  let warnedAboutMissingFields = false;
 
   const rows = $('.article-row, [id^="articleRow"]');
 
@@ -59,20 +60,32 @@ export function parsePrices(html) {
       $row.find('[class*="seller"] a').first().text().trim() ||
       null;
 
-    const country =
-      $row.find('.seller-info [class*="icon-flag"]').attr('data-original-title') ||
-      $row.find('[class*="icon-flag"]').attr('title') ||
+    // Country: sprite icon with aria-label="Item location: Germany"
+    const countryRaw =
+      $row.find('span[aria-label^="Item location"]').first().attr('aria-label') ||
+      $row.find('.seller-info span[aria-label]').first().attr('aria-label') ||
       null;
+    const country = countryRaw ? countryRaw.replace(/^Item location:\s*/i, '').trim() : null;
 
     const condition =
       $row.find('.article-condition').text().trim() ||
       $row.find('[class*="badge"]').first().text().trim() ||
       null;
 
+    // Language: sprite icon with data-original-title="English" inside .product-attributes
     const language =
-      $row.find('.article-language').attr('data-original-title') ||
-      $row.find('[class*="language"]').attr('title') ||
+      $row.find('.product-attributes span[data-original-title]').first().attr('data-original-title') ||
+      $row.find('span[data-original-title]').first().attr('data-original-title') ||
+      $row.find('span.icon[aria-label]:not([aria-label^="Item location"])').first().attr('aria-label') ||
       null;
+
+    if (!language || !country) {
+      if (!warnedAboutMissingFields) {
+        console.warn('[parser] Missing language/country in some rows. Sample HTML:');
+        console.warn($row.html()?.slice(0, 200));
+        warnedAboutMissingFields = true;
+      }
+    }
 
     prices.push({ price, seller, country, condition, language });
   });
