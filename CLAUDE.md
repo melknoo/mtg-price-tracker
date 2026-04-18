@@ -35,15 +35,15 @@ Context for Claude Code sessions on this project. Read this **first** every sess
 - **Runtime**: Node.js ≥20, pure ESM (`"type": "module"`). No TypeScript (keep it lean for Termux).
 - **Browser fetch**: `puppeteer-extra` + `puppeteer-extra-plugin-stealth` — jede Anfrage läuft direkt über Chromium (kein got/cookie-layer mehr)
 - **HTML parsing**: `cheerio`
-- **Storage** *(planned)*: `better-sqlite3`
+- **Storage**: `better-sqlite3`
 - **Push** *(planned)*: `ntfy.sh`, single HTTP POST per alert
 
 ## Iteration Plan
 
 | # | Phase                                            | Status                        |
 | - | ------------------------------------------------ | ----------------------------- |
-| 1 | Scraper + Parser                                 | **IN PROGRESS — blocked**     |
-| 2 | SQLite storage + `npm run history` CLI           | not started                   |
+| 1 | Scraper + Parser                                 | ✅ done                        |
+| 2 | SQLite storage + `npm run history` CLI           | ✅ done                        |
 | 3 | Detector: baseline + drop detection + cooldown   | not started                   |
 | 4 | ntfy notifier                                    | not started                   |
 | 5 | Cron orchestration + `config.json` loader        | not started                   |
@@ -51,15 +51,11 @@ Context for Claude Code sessions on this project. Read this **first** every sess
 
 **Rule**: do not start iteration N+1 before N runs end-to-end on the user's dev machine.
 
-## Status Iteration 1
+## Status Iteration 1 + 2
 
-Der `got`-Layer + Cookie-Jar-Ansatz wurde verworfen. Die Architektur wurde vereinfacht: `browser.js` ruft jede URL direkt über Puppeteer-Stealth ab — kein separater Warmup, kein `cookies.js`/`fetcher.js`/`warmup.js` mehr.
+Iteration 1 abgeschlossen: `browser.js` ruft URLs direkt über Puppeteer-Stealth ab. Cloudflare-Pass bestätigt auf Dev-Rechner und S9+.
 
-**Offen:** Ob Puppeteer-Stealth Cloudflare auf Cardmarket nun zuverlässig passiert, ist noch nicht bestätigt. Falls es erneut blockiert:
-
-- **Option A — Neuere Stealth-Library.** `puppeteer-real-browser` oder `rebrowser-puppeteer` statt `puppeteer-extra-plugin-stealth`. Arms-Race-Risiko.
-- **Option B — Manueller Cookie-Import.** User exportiert Cookies aus echtem Chrome via DevTools/Extension → `data/cookies.json`. Kein Puppeteer nötig, manuelle Erneuerung alle paar Tage/Wochen.
-- **Option C — Hybrid.** B als primärer Weg, A als Fallback. Bei Fehler: ntfy-Alert "Cookies abgelaufen".
+Iteration 2 abgeschlossen: SQLite-Storage + `npm run history` CLI funktionieren end-to-end auf Dev-Rechner.
 
 ## Code Conventions
 
@@ -76,16 +72,26 @@ Der `got`-Layer + Cookie-Jar-Ansatz wurde verworfen. Die Architektur wurde verei
 src/scraper/
   browser.js    puppeteer-extra-stealth fetch → { ok, html, ... }
   parser.js     cheerio → price[] with fallback selectors + diagnose()
-  index.js      orchestrator: scrapeCard(card) → { name, prices, scrapedAt, raw }
-test-scraper.js CLI for iteration 1. Flags: --dump-html
+  index.js      orchestrator: scrapeCard(card) → { name, cardSlug, prices, scrapedAt, raw }
+                slugFromUrl(url) → "set-name/card-name" slug
+src/storage/
+  schema.sql    idempotent CREATE TABLE IF NOT EXISTS (scans + scan_listings)
+  db.js         getDb(), initDb(), closeDb() — better-sqlite3 singleton
+  scans.js      insertScan(), getRecentScans(cardSlug, limit), listCardSlugs()
+test-scraper.js CLI for iteration 1+2. Flags: --dump-html, --persist
+history.js      CLI: npm run history [slug] [limit]
 ```
 
 ## Commands
 
 ```bash
-npm install                       # Puppeteer downloads ~/.cache/puppeteer/chromium
+npm install                       # Puppeteer downloads ~/.cache/puppeteer/chromium; better-sqlite3 compiles natively
 npm run test:scraper              # full pipeline against hardcoded test card (Mox Opal)
 npm run test:dump                 # save raw HTML to data/last-response.html
+npm run test:persist              # scrape + persist to data/history.db
+npm run history                   # overview: last 3 scans per card
+npm run history modern-masters-2015/mox-opal        # last 10 scans for card
+npm run history modern-masters-2015/mox-opal 20     # last 20 scans
 WARMUP_HEADFUL=1 npm run test:scraper  # sichtbares Chromium via WSLg
 ```
 

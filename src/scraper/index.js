@@ -1,6 +1,12 @@
 import { fetchViaBrowser } from './browser.js';
 import { parsePrices, diagnose } from './parser.js';
 
+export function slugFromUrl(url) {
+  const m = url.match(/\/Products\/Singles\/([^/]+)\/([^/?#]+)/i);
+  if (!m) throw new Error(`Could not derive slug from URL: ${url}`);
+  return `${m[1]}/${m[2]}`.toLowerCase();
+}
+
 /**
  * Scrape a single card's Cardmarket product page.
  *
@@ -25,6 +31,7 @@ export async function scrapeCard(card) {
 
   return {
     name: card.name,
+    cardSlug: slugFromUrl(card.url),
     url: fullUrl,
     prices,
     scrapedAt: new Date().toISOString(),

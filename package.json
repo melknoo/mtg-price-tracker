@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "test:scraper": "node test-scraper.js",
-    "test:dump": "node test-scraper.js --dump-html"
+    "test:dump": "node test-scraper.js --dump-html",
+    "test:persist": "node test-scraper.js --persist",
+    "history": "node history.js"
   },
   "dependencies": {
+    "better-sqlite3": "^11.5.0",
     "cheerio": "^1.0.0",
     "puppeteer": "^23.11.1",
     "puppeteer-extra": "^3.3.6",

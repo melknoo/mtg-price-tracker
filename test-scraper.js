@@ -7,7 +7,10 @@ import { scrapeCard, diagnose } from './src/scraper/index.js';
 const DUMP_PATH = path.resolve('./data/last-response.html');
 
 const args = process.argv.slice(2);
-const dumpHtml = args.includes('--dump-html');
+const flags = {
+  dumpHtml: args.includes('--dump-html'),
+  persist: args.includes('--persist'),
+};
 
 const testCard = {
   name: 'Mox Opal',
@@ -17,7 +20,7 @@ const testCard = {
 };
 
 async function main() {
-  if (dumpHtml) {
+  if (flags.dumpHtml) {
     console.log(`Dumping raw HTML from ${testCard.url}...`);
     const fullUrl = `${testCard.url}?${testCard.filters}`;
     const res = await fetchViaBrowser(fullUrl);
@@ -73,6 +76,19 @@ async function main() {
         `\nLowest: ${result.prices[0].price.toFixed(2)} € | ` +
           `3rd lowest: ${third.toFixed(2)} € (used as robust "current" in detector)`
       );
+    }
+    if (flags.persist) {
+      const { initDb } = await import('./src/storage/db.js');
+      const { insertScan } = await import('./src/storage/scans.js');
+      initDb();
+      const { scanId } = insertScan({
+        cardSlug: result.cardSlug,
+        cardName: result.name,
+        url: result.url,
+        scrapedAt: result.scrapedAt,
+        prices: result.prices,
+      });
+      console.log(`\n💾 Persisted as scan #${scanId}`);
     }
   } catch (err) {
     console.error('Scrape failed:', err.message);
