@@ -14,7 +14,7 @@ const flags = {
 
 const testCard = {
   name: 'Mox Opal',
-  url: 'https://www.cardmarket.com/en/Magic/Products/Singles/Modern-Masters-2015/Mox-Opal',
+  url: 'https://www.cardmarket.com/de/Magic/Cards/Mox-Opal',
   filters:
     'sellerCountry=7&sellerReputation=1&language=1,3&minCondition=4&isSigned=N&isAltered=N',
 };
