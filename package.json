@@ -1,0 +1,19 @@
+{
+  "name": "mtg-price-tracker",
+  "version": "0.1.0",
+  "description": "Cardmarket price tracker with ntfy push notifications",
+  "type": "module",
+  "scripts": {
+    "test:scraper": "node test-scraper.js",
+    "test:dump": "node test-scraper.js --dump-html"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "puppeteer": "^23.11.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
