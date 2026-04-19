@@ -2,9 +2,15 @@ import { fetchViaBrowser } from './browser.js';
 import { parsePrices, diagnose } from './parser.js';
 
 export function slugFromUrl(url) {
-  const m = url.match(/\/Products\/Singles\/([^/]+)\/([^/?#]+)/i);
-  if (!m) throw new Error(`Could not derive slug from URL: ${url}`);
-  return `${m[1]}/${m[2]}`.toLowerCase();
+  // Set-specific: /Products/Singles/{Set}/{Card}
+  const mSet = url.match(/\/Products\/Singles\/([^/]+)\/([^/?#]+)/i);
+  if (mSet) return `${mSet[1]}/${mSet[2]}`.toLowerCase();
+
+  // Set-independent: /Cards/{Card}
+  const mCard = url.match(/\/Cards\/([^/?#]+)/i);
+  if (mCard) return mCard[1].toLowerCase();
+
+  throw new Error(`Could not derive slug from URL: ${url}`);
 }
 
 /**
