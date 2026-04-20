@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTG Price Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#10b981', dark: '#059669' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [v-cloak] { display: none; }
+    .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+    .fade-enter-from, .fade-leave-to { opacity: 0; }
+    .slide-enter-active, .slide-leave-active { transition: all 0.2s ease; }
+    .slide-enter-from, .slide-leave-to { opacity: 0; transform: translateY(-4px); }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+<div id="app" v-cloak class="max-w-3xl mx-auto px-4 py-8">
+
+  <!-- Header -->
+  <div class="mb-8 flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-emerald-400 tracking-tight">MTG Price Tracker</h1>
+      <p v-if="ntfy.topic" class="text-sm text-slate-500 mt-0.5">
+        ntfy: <span class="text-slate-400 font-mono">{{ ntfy.topic }}</span>
+      </p>
+    </div>
+    <span class="text-slate-600 text-3xl select-none">🃏</span>
+  </div>
+
+  <!-- Toast -->
+  <transition name="fade">
+    <div v-if="toast.message"
+         :class="['fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium max-w-xs',
+                  toast.type === 'error' ? 'bg-red-900 text-red-200 border border-red-700' : 'bg-emerald-900 text-emerald-200 border border-emerald-700']">
+      {{ toast.message }}
+    </div>
+  </transition>
+
+  <!-- Watchlist -->
+  <div class="bg-slate-900 rounded-xl border border-slate-800 mb-6">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+      <h2 class="font-semibold text-slate-200">Watchlist</h2>
+      <span class="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">{{ cards.length }} {{ cards.length === 1 ? 'Karte' : 'Karten' }}</span>
+    </div>
+
+    <div v-if="loading" class="px-5 py-8 text-center text-slate-500 text-sm">Lade Karten…</div>
+
+    <div v-else-if="cards.length === 0" class="px-5 py-8 text-center text-slate-500 text-sm">
+      Noch keine Karten. Füge eine Karte hinzu.
+    </div>
+
+    <div v-else>
+      <div v-for="card in cards" :key="card.name" class="border-b border-slate-800 last:border-b-0">
+        <!-- Card row -->
+        <div class="flex items-center gap-3 px-5 py-3.5">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-slate-100 truncate">{{ card.name }}</div>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span class="text-xs text-slate-500">
+                Alert bei ≥ <span class="text-emerald-500 font-mono">{{ card.alertThresholdPercent ?? defaults.alertThresholdPercent }}%</span> Drop
+              </span>
+              <span class="text-slate-700">·</span>
+              <a :href="card.url" target="_blank" class="text-xs text-slate-500 hover:text-slate-300 truncate max-w-[180px] transition-colors" :title="card.url">
+                {{ shortUrl(card.url) }}
+              </a>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button @click="toggleHistory(card)"
+                    :class="['text-xs px-2.5 py-1 rounded-md transition-colors',
+                             expandedCard === card.name
+                             ? 'bg-slate-700 text-slate-200'
+                             : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200']"
+                    title="Preishistorie">
+              {{ expandedCard === card.name ? '▲ History' : '▼ History' }}
+            </button>
+            <button @click="removeCard(card.name)"
+                    class="text-slate-600 hover:text-red-400 transition-colors p-1.5 rounded hover:bg-slate-800"
+                    title="Entfernen">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- History panel -->
+        <transition name="slide">
+          <div v-if="expandedCard === card.name" class="bg-slate-950 border-t border-slate-800">
+            <div v-if="historyLoading" class="px-5 py-4 text-sm text-slate-500">Lade History…</div>
+            <div v-else-if="!card.slug" class="px-5 py-4 text-sm text-slate-500">
+              Kein Slug für diese URL ableitbar.
+            </div>
+            <div v-else-if="(history[card.slug] || []).length === 0" class="px-5 py-4 text-sm text-slate-500">
+              Noch keine Scan-Daten. Starte <code class="text-slate-400 bg-slate-800 px-1 rounded">npm run cron</code> für den ersten Scan.
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="text-slate-500 text-left">
+                    <th class="px-5 py-2 font-medium">Zeitpunkt</th>
+                    <th class="px-3 py-2 font-medium text-right">Günstigste</th>
+                    <th class="px-3 py-2 font-medium text-right">3.-günstigste</th>
+                    <th class="px-5 py-2 font-medium text-right">Angebote</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="scan in history[card.slug]" :key="scan.id"
+                      class="border-t border-slate-800 hover:bg-slate-900 transition-colors">
+                    <td class="px-5 py-2 text-slate-400 whitespace-nowrap">{{ formatDate(scan.scrapedAt) }}</td>
+                    <td class="px-3 py-2 text-right font-mono text-slate-300">
+                      {{ scan.lowestPrice != null ? formatPrice(scan.lowestPrice) : '—' }}
+                    </td>
+                    <td class="px-3 py-2 text-right font-mono text-emerald-400 font-semibold">
+                      {{ scan.thirdLowestPrice != null ? formatPrice(scan.thirdLowestPrice) : '—' }}
+                    </td>
+                    <td class="px-5 py-2 text-right text-slate-500">{{ scan.listingsTotal }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </transition>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add card form -->
+  <div class="bg-slate-900 rounded-xl border border-slate-800">
+    <div class="px-5 py-4 border-b border-slate-800">
+      <h2 class="font-semibold text-slate-200">Karte hinzufügen</h2>
+    </div>
+    <div class="px-5 py-5 space-y-4">
+      <!-- Name -->
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">Kartenname <span class="text-red-500">*</span></label>
+        <input v-model="form.name"
+               @keyup.enter="focusUrl"
+               type="text"
+               placeholder="z.B. Mox Opal"
+               class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors" />
+        <a v-if="searchLink"
+           :href="searchLink"
+           target="_blank"
+           class="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-400 transition-colors">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+          </svg>
+          Auf Cardmarket suchen → URL kopieren
+        </a>
+      </div>
+
+      <!-- URL -->
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">
+          Cardmarket-URL <span class="text-slate-600">(optional)</span>
+        </label>
+        <input v-model="form.url"
+               ref="urlInput"
+               type="url"
+               placeholder="https://www.cardmarket.com/en/Magic/Products/Singles/…"
+               class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono" />
+        <p v-if="autoUrl" class="mt-1.5 text-xs text-slate-500">
+          Wird automatisch verwendet:
+          <a :href="autoUrl" target="_blank" class="text-slate-400 hover:text-emerald-400 font-mono transition-colors break-all">{{ autoUrl }}</a>
+        </p>
+      </div>
+
+      <!-- Threshold (optional) -->
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1.5">
+          Alert-Schwellwert % <span class="text-slate-600">(optional, Default: {{ defaults.alertThresholdPercent }}%)</span>
+        </label>
+        <div class="flex items-center gap-2">
+          <input v-model.number="form.threshold"
+                 type="number"
+                 min="1"
+                 max="90"
+                 placeholder="{{ defaults.alertThresholdPercent }}"
+                 class="w-24 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors" />
+          <span class="text-sm text-slate-500">%</span>
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <button @click="addCard"
+              :disabled="adding || !form.name.trim()"
+              class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-medium py-2.5 px-4 rounded-lg text-sm transition-colors">
+        {{ adding ? 'Wird hinzugefügt…' : '+ Karte hinzufügen' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <p class="text-center text-slate-700 text-xs mt-8">
+    MTG Price Tracker · Kein Auth — nur im Heimnetz verwenden
+  </p>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, reactive, computed, nextTick } = Vue;
+
+createApp({
+  setup() {
+    const cards = ref([]);
+    const defaults = ref({});
+    const ntfy = ref({});
+    const loading = ref(true);
+    const adding = ref(false);
+    const expandedCard = ref(null);
+    const historyLoading = ref(false);
+    const history = reactive({});
+    const urlInput = ref(null);
+
+    const form = reactive({ name: '', url: '', threshold: '' });
+    const toast = reactive({ message: '', type: 'success', _timer: null });
+
+    const searchLink = computed(() => {
+      const q = form.name.trim();
+      if (!q) return null;
+      return `https://www.cardmarket.com/en/Magic/Products/Search?searchString=${encodeURIComponent(q)}`;
+    });
+
+    const autoUrl = computed(() => {
+      const q = form.name.trim();
+      if (!q || form.url.trim()) return null;
+      const slug = q
+        .replace(/'/g, '')
+        .replace(/[^\w\s-]/g, ' ')
+        .trim()
+        .replace(/\s+/g, '-');
+      return `https://www.cardmarket.com/de/Magic/Cards/${slug}`;
+    });
+
+    function showToast(message, type = 'success') {
+      clearTimeout(toast._timer);
+      toast.message = message;
+      toast.type = type;
+      toast._timer = setTimeout(() => { toast.message = ''; }, 3500);
+    }
+
+    function shortUrl(url) {
+      try {
+        const u = new URL(url);
+        const parts = u.pathname.split('/').filter(Boolean);
+        return parts.slice(-2).join('/');
+      } catch {
+        return url;
+      }
+    }
+
+    function formatPrice(price) {
+      return price.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+    }
+
+    function formatDate(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', year: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+      });
+    }
+
+    async function loadCards() {
+      loading.value = true;
+      try {
+        const res = await fetch('/api/cards');
+        const data = await res.json();
+        cards.value = data.cards;
+        defaults.value = data.defaults;
+        ntfy.value = data.ntfy;
+      } catch {
+        showToast('Fehler beim Laden der Karten', 'error');
+      } finally {
+        loading.value = false;
+      }
+    }
+
+    async function toggleHistory(card) {
+      if (expandedCard.value === card.name) {
+        expandedCard.value = null;
+        return;
+      }
+      expandedCard.value = card.name;
+      if (!card.slug || history[card.slug]) return;
+      historyLoading.value = true;
+      try {
+        const res = await fetch(`/api/history/${card.slug}`);
+        const data = await res.json();
+        history[card.slug] = data.scans;
+      } catch {
+        showToast('Fehler beim Laden der History', 'error');
+      } finally {
+        historyLoading.value = false;
+      }
+    }
+
+    async function addCard() {
+      const name = form.name.trim();
+      if (!name) return;
+
+      adding.value = true;
+      try {
+        const body = { name };
+        if (form.url.trim()) body.url = form.url.trim();
+        if (form.threshold) body.alertThresholdPercent = Number(form.threshold);
+
+        const res = await fetch('/api/cards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'Fehler', 'error');
+          return;
+        }
+        showToast(`"${name}" hinzugefügt ✓`);
+        form.name = '';
+        form.url = '';
+        form.threshold = '';
+        await loadCards();
+      } catch {
+        showToast('Netzwerkfehler', 'error');
+      } finally {
+        adding.value = false;
+      }
+    }
+
+    async function removeCard(name) {
+      if (!confirm(`"${name}" aus der Watchlist entfernen?`)) return;
+      try {
+        const res = await fetch(`/api/cards/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'Fehler', 'error');
+          return;
+        }
+        if (expandedCard.value === name) expandedCard.value = null;
+        showToast(`"${name}" entfernt`);
+        await loadCards();
+      } catch {
+        showToast('Netzwerkfehler', 'error');
+      }
+    }
+
+    function focusUrl() {
+      nextTick(() => urlInput.value?.focus());
+    }
+
+    loadCards();
+
+    return {
+      cards, defaults, ntfy, loading, adding,
+      expandedCard, historyLoading, history,
+      form, toast, searchLink, autoUrl, urlInput,
+      shortUrl, formatPrice, formatDate,
+      toggleHistory, addCard, removeCard, focusUrl,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

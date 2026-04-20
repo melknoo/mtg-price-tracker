@@ -14,7 +14,8 @@
     "test:notify": "node test-notifier.js",
     "cron": "node cron-tracker.js",
     "cron:dry": "node cron-tracker.js --dry-run",
-    "cron:verbose": "node cron-tracker.js --verbose"
+    "cron:verbose": "node cron-tracker.js --verbose",
+    "cards:web": "node web-ui.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.5.0",
