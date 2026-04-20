@@ -83,6 +83,7 @@ async function main() {
     if (flags.persist) {
       const { initDb } = await import('./src/storage/db.js');
       const { insertScan } = await import('./src/storage/scans.js');
+      const { detectDrop } = await import('./src/detector/detector.js');
       initDb();
       const { scanId } = insertScan({
         cardSlug: result.cardSlug,
@@ -92,6 +93,16 @@ async function main() {
         prices: result.prices,
       });
       console.log(`\n💾 Persisted as scan #${scanId}`);
+
+      const detection = detectDrop(scanId);
+      console.log('\n🔎 Detection:', detection);
+
+      if (detection.triggered) {
+        console.log(
+          `\n🚨 ALERT: ${detection.cardName} dropped ${detection.dropPct}% ` +
+          `(baseline ${detection.baseline}€ → current ${detection.current}€)`,
+        );
+      }
     }
   } catch (err) {
     console.error('Scrape failed:', err.message);

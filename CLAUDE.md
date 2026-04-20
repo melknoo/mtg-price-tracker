@@ -44,18 +44,20 @@ Context for Claude Code sessions on this project. Read this **first** every sess
 | - | ------------------------------------------------ | ----------------------------- |
 | 1 | Scraper + Parser                                 | ✅ done                        |
 | 2 | SQLite storage + `npm run history` CLI           | ✅ done                        |
-| 3 | Detector: baseline + drop detection + cooldown   | not started                   |
+| 3 | Detector: baseline + drop detection + cooldown   | ✅ done                        |
 | 4 | ntfy notifier                                    | not started                   |
 | 5 | Cron orchestration + `config.json` loader        | not started                   |
 | 6 | Termux deployment automation                     | not started                   |
 
 **Rule**: do not start iteration N+1 before N runs end-to-end on the user's dev machine.
 
-## Status Iteration 1 + 2
+## Status Iteration 1 + 2 + 3
 
 Iteration 1 abgeschlossen: `browser.js` ruft URLs direkt über Puppeteer-Stealth ab. Cloudflare-Pass bestätigt auf Dev-Rechner und S9+.
 
 Iteration 2 abgeschlossen: SQLite-Storage + `npm run history` CLI funktionieren end-to-end auf Dev-Rechner.
+
+Iteration 3 abgeschlossen: Detector + alerts-Tabelle + `npm run test:detector` (5/5 Tests grün) auf Dev-Rechner validiert.
 
 ## Code Conventions
 
@@ -75,10 +77,16 @@ src/scraper/
   index.js      orchestrator: scrapeCard(card) → { name, cardSlug, prices, scrapedAt, raw }
                 slugFromUrl(url) → "set-name/card-name" slug
 src/storage/
-  schema.sql    idempotent CREATE TABLE IF NOT EXISTS (scans + scan_listings)
-  db.js         getDb(), initDb(), closeDb() — better-sqlite3 singleton
+  schema.sql    idempotent CREATE TABLE IF NOT EXISTS (scans, scan_listings, alerts)
+  db.js         getDb(), initDb(), closeDb(), _setTestDb() — better-sqlite3 singleton
   scans.js      insertScan(), getRecentScans(cardSlug, limit), listCardSlugs()
-test-scraper.js CLI for iteration 1+2. Flags: --dump-html, --persist
+src/detector/
+  detector.js   detectDrop(scanId, options) → rich result object
+                Constants (exported): DEFAULT_THRESHOLD_PERCENT=15, WARMUP_HOURS=48,
+                COOLDOWN_HOURS=12, COOLDOWN_PRICE_DELTA_PCT=5, BASELINE_DAYS=30
+  alerts.js     insertAlert(), getLastAlert(cardSlug), getPendingAlerts(), markAlertNotified()
+test-scraper.js CLI for iteration 1+2+3. Flags: --dump-html, --persist
+test-detector.js Simulation CLI: in-memory DB, 5 test cases, no real scraping
 history.js      CLI: npm run history [slug] [limit]
 ```
 
@@ -88,7 +96,8 @@ history.js      CLI: npm run history [slug] [limit]
 npm install                       # Puppeteer downloads ~/.cache/puppeteer/chromium; better-sqlite3 compiles natively
 npm run test:scraper              # full pipeline against hardcoded test card (Mox Opal)
 npm run test:dump                 # save raw HTML to data/last-response.html
-npm run test:persist              # scrape + persist to data/history.db
+npm run test:persist              # scrape + persist + run detector
+npm run test:detector             # 5 in-memory detector test cases (no scraping needed)
 npm run history                   # overview: last 3 scans per card
 npm run history modern-masters-2015/mox-opal        # last 10 scans for card
 npm run history modern-masters-2015/mox-opal 20     # last 20 scans
@@ -140,18 +149,27 @@ Plus Samsung-specific: exclude Termux from battery optimization AND add to "Apps
 
 Per-card fields override `defaults`. User pastes the product URL directly from their browser; filters appended as query string.
 
-## Detector Logic *(planned, iteration 3)*
+## Detector Logic *(iteration 3, done)*
 
 ```
 baseline = MIN( third_lowest_price_per_scan ) over last 30 days
-current  = third_lowest_price of most recent scan
+current  = third_lowest_price of most recent scan (fallback: lowest_price)
 drop_pct = (baseline - current) / baseline * 100
 
-alert if:
-    drop_pct >= card.alertThresholdPercent
-    AND last_alert_for_this_card > card.alertCooldownHours ago
-    AND scan_history_age_for_this_card >= 48 hours    # warmup window
+skipped conditions (no alert):
+  - no_history:  zero prior scans for this slug
+  - warmup:      oldest history scan < 48h ago (WARMUP_HOURS=48)
+  - no_baseline: all history scans have NULL third_lowest_price
+  - no_listings: current scan has no prices at all
+
+alert fires if:
+  drop_pct >= threshold (DEFAULT_THRESHOLD_PERCENT=15)
+  AND NOT (last alert < COOLDOWN_HOURS=12 ago AND price delta < COOLDOWN_PRICE_DELTA_PCT=5%)
 ```
+
+**Cooldown kombiniert zwei Bedingungen:** Unterdrückung nur wenn BEIDE erfüllt: < 12h seit letztem Alert UND Preis hat sich um < 5% verändert. Bei > 5% Preisdelta oder nach 12h wird erneut alertiert.
+
+**Wichtig:** MIN-Baseline. Sobald ein günstiger Scan in den 30-Tage-Window kommt, sinkt die Baseline. Ein Scan außerhalb des Fensters beeinflusst die Baseline nicht (wird in den Cooldown-Tests ausgenutzt).
 
 **Why 3rd-lowest, not lowest?** Filters out single mispriced listings (wrong expansion, misclicked price) and one-off sniper listings that will be gone by the time the push arrives.
 

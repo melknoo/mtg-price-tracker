@@ -8,14 +8,21 @@ const DB_PATH = path.resolve(__dirname, '../../data/history.db');
 const SCHEMA_PATH = path.resolve(__dirname, './schema.sql');
 
 let dbInstance = null;
+let testDbOverride = null;
 
 export function getDb() {
+  if (testDbOverride) return testDbOverride;
   if (dbInstance) return dbInstance;
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   dbInstance = new Database(DB_PATH);
   dbInstance.pragma('journal_mode = WAL');
   dbInstance.pragma('foreign_keys = ON');
   return dbInstance;
+}
+
+/** TEST-ONLY: override the singleton. Pass null to reset. */
+export function _setTestDb(db) {
+  testDbOverride = db;
 }
 
 export function initDb() {

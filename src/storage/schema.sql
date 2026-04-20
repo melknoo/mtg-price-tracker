@@ -23,3 +23,18 @@ CREATE TABLE IF NOT EXISTS scan_listings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scan_listings_scan ON scan_listings(scan_id);
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  card_slug TEXT NOT NULL,
+  card_name TEXT NOT NULL,
+  scan_id INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  baseline_price REAL NOT NULL,
+  current_price REAL NOT NULL,
+  drop_percent REAL NOT NULL,
+  threshold_percent REAL NOT NULL,
+  notified INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_card_time ON alerts(card_slug, created_at DESC);
