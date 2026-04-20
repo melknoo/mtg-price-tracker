@@ -99,9 +99,20 @@ async function main() {
 
       if (detection.triggered) {
         console.log(
-          `\n🚨 ALERT: ${detection.cardName} dropped ${detection.dropPct}% ` +
+          `\nALERT: ${detection.cardName} dropped ${detection.dropPct}% ` +
           `(baseline ${detection.baseline}€ → current ${detection.current}€)`,
         );
+
+        const { dispatchPendingAlerts } = await import('./src/notifier/dispatcher.js');
+        const dispatch = await dispatchPendingAlerts({ topic: 'mtg-tracker-dev' });
+
+        if (dispatch.sent > 0) {
+          console.log(`Sent ${dispatch.sent} notification(s) via ntfy`);
+        }
+        if (dispatch.failed.length > 0) {
+          console.log(`Failed notifications: ${dispatch.failed.length}`);
+          dispatch.failed.forEach((f) => console.log(`  Alert #${f.alertId}: ${f.error}`));
+        }
       }
     }
   } catch (err) {

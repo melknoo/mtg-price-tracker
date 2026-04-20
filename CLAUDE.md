@@ -36,7 +36,7 @@ Context for Claude Code sessions on this project. Read this **first** every sess
 - **Browser fetch**: `puppeteer-extra` + `puppeteer-extra-plugin-stealth` — jede Anfrage läuft direkt über Chromium (kein got/cookie-layer mehr)
 - **HTML parsing**: `cheerio`
 - **Storage**: `better-sqlite3`
-- **Push** *(planned)*: `ntfy.sh`, single HTTP POST per alert
+- **Push**: `ntfy.sh`, single HTTP POST per alert via native `fetch` (Node 18+)
 
 ## Iteration Plan
 
@@ -45,19 +45,21 @@ Context for Claude Code sessions on this project. Read this **first** every sess
 | 1 | Scraper + Parser                                 | ✅ done                        |
 | 2 | SQLite storage + `npm run history` CLI           | ✅ done                        |
 | 3 | Detector: baseline + drop detection + cooldown   | ✅ done                        |
-| 4 | ntfy notifier                                    | not started                   |
+| 4 | ntfy notifier                                    | ✅ done                        |
 | 5 | Cron orchestration + `config.json` loader        | not started                   |
 | 6 | Termux deployment automation                     | not started                   |
 
 **Rule**: do not start iteration N+1 before N runs end-to-end on the user's dev machine.
 
-## Status Iteration 1 + 2 + 3
+## Status Iteration 1 + 2 + 3 + 4
 
 Iteration 1 abgeschlossen: `browser.js` ruft URLs direkt über Puppeteer-Stealth ab. Cloudflare-Pass bestätigt auf Dev-Rechner und S9+.
 
 Iteration 2 abgeschlossen: SQLite-Storage + `npm run history` CLI funktionieren end-to-end auf Dev-Rechner.
 
 Iteration 3 abgeschlossen: Detector + alerts-Tabelle + `npm run test:detector` (5/5 Tests grün) auf Dev-Rechner validiert.
+
+Iteration 4 abgeschlossen: ntfy-Notifier implementiert. `npm run test:notify` sendet Test-Push via `fetch` (native Node 18+). `dispatchPendingAlerts()` verarbeitet alle offenen DB-Alerts und setzt `notified = 1`. Kein neuer Dependency nötig.
 
 ## Code Conventions
 
@@ -85,9 +87,17 @@ src/detector/
                 Constants (exported): DEFAULT_THRESHOLD_PERCENT=15, WARMUP_HOURS=48,
                 COOLDOWN_HOURS=12, COOLDOWN_PRICE_DELTA_PCT=5, BASELINE_DAYS=30
   alerts.js     insertAlert(), getLastAlert(cardSlug), getPendingAlerts(), markAlertNotified()
-test-scraper.js CLI for iteration 1+2+3. Flags: --dump-html, --persist
+src/notifier/
+  ntfy.js       sendAlert(alert, options) → { success, error? } — HTTP POST to ntfy.sh
+  dispatcher.js dispatchPendingAlerts(options) → { processed, sent, failed[] }
+                reads DB alerts (notified=0), sends via ntfy, marks notified=1
+test-scraper.js CLI for iteration 1+2+3+4. Flags: --dump-html, --persist
 test-detector.js Simulation CLI: in-memory DB, 5 test cases, no real scraping
+test-notifier.js CLI: manual ntfy test. Args: [topic] [--dry-run]
 history.js      CLI: npm run history [slug] [limit]
+
+ntfy Topic für Production: kryptisch-zufällig wählen, z.B. mtg-tracker-k8m3p9x2
+(wird in iteration 5 in config.json konfigurierbar)
 ```
 
 ## Commands
@@ -98,6 +108,9 @@ npm run test:scraper              # full pipeline against hardcoded test card (M
 npm run test:dump                 # save raw HTML to data/last-response.html
 npm run test:persist              # scrape + persist + run detector
 npm run test:detector             # 5 in-memory detector test cases (no scraping needed)
+npm run test:notify               # send fake alert to ntfy topic 'mtg-tracker-dev'
+npm run test:notify my-topic      # send to custom topic
+npm run test:notify my-topic --dry-run  # show params, don't send
 npm run history                   # overview: last 3 scans per card
 npm run history modern-masters-2015/mox-opal        # last 10 scans for card
 npm run history modern-masters-2015/mox-opal 20     # last 20 scans

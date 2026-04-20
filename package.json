@@ -8,7 +8,8 @@
     "test:dump": "node test-scraper.js --dump-html",
     "test:persist": "node test-scraper.js --persist",
     "history": "node history.js",
-    "test:detector": "node test-detector.js"
+    "test:detector": "node test-detector.js",
+    "test:notify": "node test-notifier.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.5.0",
