@@ -10,9 +10,10 @@ const args = process.argv.slice(2);
 const flags = {
   dumpHtml: args.includes('--dump-html'),
   persist: args.includes('--persist'),
+  config: args.includes('--config') ? (args[args.indexOf('--config') + 1] ?? '0') : null,
 };
 
-const testCard = {
+let testCard = {
   name: 'Mox Opal',
   // Set-independent (all printings): /Cards/{Card}
   url: 'https://www.cardmarket.com/en/Magic/Cards/Mox-Opal',
@@ -21,6 +22,20 @@ const testCard = {
   filters:
     'sellerCountry=7&sellerReputation=1&language=1,3&minCondition=4&isSigned=N&isAltered=N',
 };
+
+if (flags.config !== null) {
+  const { loadConfig, resolveCardConfig } = await import('./src/config/config.js');
+  const config = loadConfig();
+  const cardIndex = parseInt(flags.config, 10);
+
+  if (isNaN(cardIndex) || cardIndex >= config.cards.length) {
+    console.error(`Card index ${flags.config} out of range (0-${config.cards.length - 1})`);
+    process.exit(1);
+  }
+
+  testCard = resolveCardConfig(config.cards[cardIndex], config.defaults);
+  console.log(`Using card from config[${cardIndex}]: ${testCard.name}`);
+}
 
 async function main() {
   if (flags.dumpHtml) {

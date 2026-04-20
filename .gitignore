@@ -4,5 +4,6 @@ data/cookies.json
 data/last-response.html
 data/history.db
 data/*.log
+cron.log
 .env
-config.json
+config.json.bak

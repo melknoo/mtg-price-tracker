@@ -1,0 +1,28 @@
+{
+  "ntfy": {
+    "topic": "mtg-tracker-dev",
+    "baseUrl": "https://ntfy.sh"
+  },
+  "defaults": {
+    "filters": "sellerCountry=7&sellerReputation=1&language=1,3&minCondition=4&isSigned=N&isAltered=N",
+    "alertThresholdPercent": 15,
+    "alertCooldownHours": 12
+  },
+  "cards": [
+    {
+      "name": "Mox Opal",
+      "url": "https://www.cardmarket.com/en/Magic/Products/Singles/Modern-Masters-2015/Mox-Opal"
+    },
+    {
+      "name": "Tropical Island",
+      "url": "https://www.cardmarket.com/de/Magic/Cards/Tropical-Island",
+      "alertThresholdPercent": 20
+    },
+    {
+      "name": "Gaeas Cradle",
+      "url": "https://www.cardmarket.com/de/Magic/Cards/Gaeas-Cradle",
+      "alertThresholdPercent": 25,
+      "filters": "sellerCountry=7&language=1&minCondition=5&isSigned=N"
+    }
+  ]
+}

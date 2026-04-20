@@ -7,9 +7,14 @@
     "test:scraper": "node test-scraper.js",
     "test:dump": "node test-scraper.js --dump-html",
     "test:persist": "node test-scraper.js --persist",
+    "test:config": "node test-scraper.js --config",
+    "test:config:persist": "node test-scraper.js --config 0 --persist",
     "history": "node history.js",
     "test:detector": "node test-detector.js",
-    "test:notify": "node test-notifier.js"
+    "test:notify": "node test-notifier.js",
+    "cron": "node cron-tracker.js",
+    "cron:dry": "node cron-tracker.js --dry-run",
+    "cron:verbose": "node cron-tracker.js --verbose"
   },
   "dependencies": {
     "better-sqlite3": "^11.5.0",

@@ -55,6 +55,18 @@ export function parsePrices(html) {
 
     if (price === null) return;
 
+    // Skip non-tournament-legal sets (gold border, collector novelties)
+    const expansionHref = $row.find('a.expansion-symbol').attr('href') || '';
+    const expansionLabel = $row.find('a.expansion-symbol').attr('aria-label') || '';
+    if (
+      expansionHref.includes('30th-Anniversary') ||
+      expansionLabel.includes('30th Anniversary') ||
+      expansionHref.includes('/WCD-') ||
+      expansionLabel.includes('World Championship')
+    ) {
+      return;
+    }
+
     const seller =
       $row.find('.seller-info .seller-name a').text().trim() ||
       $row.find('[class*="seller"] a').first().text().trim() ||

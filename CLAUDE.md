@@ -46,12 +46,12 @@ Context for Claude Code sessions on this project. Read this **first** every sess
 | 2 | SQLite storage + `npm run history` CLI           | ✅ done                        |
 | 3 | Detector: baseline + drop detection + cooldown   | ✅ done                        |
 | 4 | ntfy notifier                                    | ✅ done                        |
-| 5 | Cron orchestration + `config.json` loader        | not started                   |
+| 5 | Cron orchestration + `config.json` loader        | ✅ done                        |
 | 6 | Termux deployment automation                     | not started                   |
 
 **Rule**: do not start iteration N+1 before N runs end-to-end on the user's dev machine.
 
-## Status Iteration 1 + 2 + 3 + 4
+## Status Iteration 1–5
 
 Iteration 1 abgeschlossen: `browser.js` ruft URLs direkt über Puppeteer-Stealth ab. Cloudflare-Pass bestätigt auf Dev-Rechner und S9+.
 
@@ -60,6 +60,8 @@ Iteration 2 abgeschlossen: SQLite-Storage + `npm run history` CLI funktionieren 
 Iteration 3 abgeschlossen: Detector + alerts-Tabelle + `npm run test:detector` (5/5 Tests grün) auf Dev-Rechner validiert.
 
 Iteration 4 abgeschlossen: ntfy-Notifier implementiert. `npm run test:notify` sendet Test-Push via `fetch` (native Node 18+). `dispatchPendingAlerts()` verarbeitet alle offenen DB-Alerts und setzt `notified = 1`. Kein neuer Dependency nötig.
+
+Iteration 5 abgeschlossen: `config.json` + `src/config/config.js` + `cron-tracker.js`. Multi-Card-Cron-Orchestrator verarbeitet alle Config-Karten sequenziell (2s Delay), dispatcht ntfy-Alerts. `npm run cron:dry` für Smoke-Tests ohne DB-Writes. **Ready for Termux deployment.**
 
 ## Code Conventions
 
@@ -73,6 +75,9 @@ Iteration 4 abgeschlossen: ntfy-Notifier implementiert. `npm run test:notify` se
 ## Key Files
 
 ```
+config.json     User-editable card list + ntfy config (versioned, not gitignored)
+src/config/
+  config.js     loadConfig(), resolveCardConfig() — JSON load + validation + caching
 src/scraper/
   browser.js    puppeteer-extra-stealth fetch → { ok, html, ... }
   parser.js     cheerio → price[] with fallback selectors + diagnose()
@@ -91,13 +96,11 @@ src/notifier/
   ntfy.js       sendAlert(alert, options) → { success, error? } — HTTP POST to ntfy.sh
   dispatcher.js dispatchPendingAlerts(options) → { processed, sent, failed[] }
                 reads DB alerts (notified=0), sends via ntfy, marks notified=1
-test-scraper.js CLI for iteration 1+2+3+4. Flags: --dump-html, --persist
+cron-tracker.js Main orchestrator: loads config, scrapes all cards, detects + dispatches
+test-scraper.js CLI for single-card testing. Flags: --dump-html, --persist, --config N
 test-detector.js Simulation CLI: in-memory DB, 5 test cases, no real scraping
 test-notifier.js CLI: manual ntfy test. Args: [topic] [--dry-run]
 history.js      CLI: npm run history [slug] [limit]
-
-ntfy Topic für Production: kryptisch-zufällig wählen, z.B. mtg-tracker-k8m3p9x2
-(wird in iteration 5 in config.json konfigurierbar)
 ```
 
 ## Commands
@@ -107,10 +110,17 @@ npm install                       # Puppeteer downloads ~/.cache/puppeteer/chrom
 npm run test:scraper              # full pipeline against hardcoded test card (Mox Opal)
 npm run test:dump                 # save raw HTML to data/last-response.html
 npm run test:persist              # scrape + persist + run detector
+npm run test:config               # scrape card index 0 from config.json (no DB write)
+npm run test:config:persist       # scrape config[0] + persist + detect
+node test-scraper.js --config 1   # scrape config[1] (Snapcaster), no persist
 npm run test:detector             # 5 in-memory detector test cases (no scraping needed)
 npm run test:notify               # send fake alert to ntfy topic 'mtg-tracker-dev'
 npm run test:notify my-topic      # send to custom topic
 npm run test:notify my-topic --dry-run  # show params, don't send
+npm run cron                      # process all config cards: scrape + detect + notify
+npm run cron:dry                  # dry run: scrape only, no DB writes, no notifications
+npm run cron:verbose              # full run with detection object logging
+node cron-tracker.js --card 0     # process only card index 0
 npm run history                   # overview: last 3 scans per card
 npm run history modern-masters-2015/mox-opal        # last 10 scans for card
 npm run history modern-masters-2015/mox-opal 20     # last 20 scans
@@ -141,26 +151,34 @@ export PUPPETEER_SKIP_DOWNLOAD=true
 
 Plus Samsung-specific: exclude Termux from battery optimization AND add to "Apps that never go to sleep" in Device Care.
 
-## Card Config Schema *(planned, iteration 5)*
+## Card Config Schema *(iteration 5, done)*
 
 ```json
 {
+  "ntfy": {
+    "topic": "mtg-tracker-k8m3p9x2",
+    "baseUrl": "https://ntfy.sh"
+  },
   "defaults": {
     "filters": "sellerCountry=7&sellerReputation=1&language=1,3&minCondition=4&isSigned=N&isAltered=N",
-    "alertThresholdPercent": 10,
+    "alertThresholdPercent": 15,
     "alertCooldownHours": 12
   },
   "cards": [
     {
       "name": "Mox Opal",
-      "url": "https://www.cardmarket.com/en/Magic/Products/Singles/Modern-Masters-2015/Mox-Opal",
-      "alertThresholdPercent": 15
+      "url": "https://www.cardmarket.com/en/Magic/Products/Singles/Modern-Masters-2015/Mox-Opal"
+    },
+    {
+      "name": "Snapcaster Mage",
+      "url": "https://www.cardmarket.com/en/Magic/Products/Singles/Time-Spiral-Remastered/Snapcaster-Mage",
+      "alertThresholdPercent": 20
     }
   ]
 }
 ```
 
-Per-card fields override `defaults`. User pastes the product URL directly from their browser; filters appended as query string.
+Per-card fields (`filters`, `alertThresholdPercent`) override `defaults`. `name` + `url` are required. User pastes the product URL directly from their browser; filters appended as query string. `alertCooldownHours` is system-wide only (not per-card). `config.json` is cached for the process lifetime — restart cron to pick up changes.
 
 ## Detector Logic *(iteration 3, done)*
 
