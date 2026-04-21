@@ -27,6 +27,20 @@
     {
       "name": "Mox Opal",
       "url": "https://www.cardmarket.com/de/Magic/Cards/Mox-Opal"
+    },
+    {
+      "name": "Mox Amber",
+      "url": "https://www.cardmarket.com/de/Magic/Cards/Mox-Amber"
+    },
+    {
+      "name": "Ancient Tomb",
+      "url": "https://www.cardmarket.com/de/Magic/Cards/Ancient-Tomb",
+      "filters": "sellerCountry=7&sellerReputation=1&language=1,3&minCondition=4&isSigned=N&isAltered=N&amount=1"
+    },
+    {
+      "name": "Consecrated Sphinx",
+      "url": "https://www.cardmarket.com/de/Magic/Cards/Consecrated-Sphinx",
+      "filters": "sellerCountry=7&sellerReputation=1&language=1,3&minCondition=4&isSigned=N&isAltered=N&amount=1"
     }
   ]
 }

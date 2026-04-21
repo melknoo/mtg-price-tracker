@@ -92,7 +92,7 @@ async function route(req, res) {
     try { body = await parseBody(req); }
     catch { return fail(res, 400, 'Ungültiges JSON'); }
 
-    const { name, url: cardUrl, alertThresholdPercent } = body;
+    const { name, url: cardUrl, alertThresholdPercent, filters } = body;
     if (!name?.trim()) return fail(res, 400, 'name ist erforderlich');
     const resolvedUrl = cardUrl?.trim() || cardNameToUrl(name.trim());
     if (!resolvedUrl.includes('cardmarket.com')) return fail(res, 400, 'URL muss eine cardmarket.com-URL sein');
@@ -100,6 +100,8 @@ async function route(req, res) {
       if (typeof alertThresholdPercent !== 'number' || alertThresholdPercent <= 0)
         return fail(res, 400, 'alertThresholdPercent muss eine positive Zahl sein');
     }
+    if (filters != null && typeof filters !== 'string')
+      return fail(res, 400, 'filters muss ein String sein');
 
     const config = await readConfig();
     if (config.cards.some((c) => c.name.toLowerCase() === name.trim().toLowerCase()))
@@ -107,6 +109,8 @@ async function route(req, res) {
 
     const card = { name: name.trim(), url: resolvedUrl };
     if (alertThresholdPercent) card.alertThresholdPercent = alertThresholdPercent;
+    if (filters) card.filters = filters;
+
     config.cards.push(card);
     await writeConfig(config);
     return json(res, 201, { card });
