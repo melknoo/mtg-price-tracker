@@ -15,7 +15,7 @@ export function getDb() {
   if (dbInstance) return dbInstance;
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   dbInstance = new Database(DB_PATH);
-  dbInstance.pragma('journal_mode = WAL');
+  //dbInstance.pragma('journal_mode = WAL');
   dbInstance.pragma('foreign_keys = ON');
   return dbInstance;
 }
