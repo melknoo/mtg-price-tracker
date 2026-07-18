@@ -8,14 +8,18 @@ Context for Claude Code sessions on this project. Read this **first** every sess
 
 ## Deployment Target
 
-- **Tracker host**: Samsung Galaxy S9+ (Snapdragon 845, 6 GB RAM, Android) running **Termux** with Node.js
-- **Notification receiver**: User's primary Android phone, ntfy app subscribed to a private topic
-- **Network model**: Tracker makes only outbound HTTPS calls (Cardmarket + ntfy.sh). No port forwarding, no dynamic DNS, no VPN. Both Android devices can be behind CGNAT.
+- **Tracker host**: Acer Aspire E5-573G laptop, Linux Mint 22.2 (Ubuntu 24.04 base), system Node.js at `/usr/bin/node`. Hostname `melvin-Aspire-E5-573G`. Lid switch is set to `ignore` in logind — the laptop runs closed.
+- **Scheduling**: systemd **user** units (versioned in `deploy/`, installed via `deploy/install.sh`): `mtg-tracker.timer` (hourly, `Persistent=true`, `RandomizedDelaySec=300`) → `mtg-tracker.service` (oneshot `cron-tracker.js`), plus `mtg-web-ui.service` (long-running web UI, auto-restart). Logs go to the journal: `journalctl --user -u mtg-tracker`.
+- **Notification receiver**: User's Android phone, ntfy app subscribed to topic `mtg-tracker-dev` (user's explicit choice to keep the dev topic).
+- **Web UI access**: `web-ui.js` binds `0.0.0.0:3000` → reachable in the home LAN and, without further config, via Tailscale (`http://100.101.57.51:3000`) from any tailnet device. No auth — LAN/tailnet only.
+- **Network model**: Tracker makes only outbound HTTPS calls (Cardmarket + ntfy.sh). No port forwarding, no dynamic DNS.
+
+*(Historical: iterations 1–5 originally targeted a Samsung Galaxy S9+ under Termux; that path was abandoned before deployment. See "Termux (legacy)" below.)*
 
 ## Architecture
 
 ```
-[S9+ @ Home, hourly cron]
+[Acer laptop @ Home, hourly systemd timer]
     │
     ├─▶ browser.js (puppeteer-extra-stealth → HTML)
     │
@@ -28,11 +32,16 @@ Context for Claude Code sessions on this project. Read this **first** every sess
     └─▶ notifier.js (HTTP POST to ntfy.sh/{topic})      [iteration 4]
                 │
                 └─▶ [User's phone, anywhere on the planet]
+
+[web-ui.js @ 0.0.0.0:3000, systemd service]
+    ├─▶ config.json CRUD (add/remove cards, filters)
+    └─▶ price history from SQLite
+        accessible via home LAN or Tailscale (100.101.57.51)
 ```
 
 ## Tech Stack
 
-- **Runtime**: Node.js ≥20, pure ESM (`"type": "module"`). No TypeScript (keep it lean for Termux).
+- **Runtime**: Node.js ≥20, pure ESM (`"type": "module"`). No TypeScript (keep it lean).
 - **Browser fetch**: `puppeteer-extra` + `puppeteer-extra-plugin-stealth` — jede Anfrage läuft direkt über Chromium (kein got/cookie-layer mehr)
 - **HTML parsing**: `cheerio`
 - **Storage**: `better-sqlite3`
@@ -47,11 +56,11 @@ Context for Claude Code sessions on this project. Read this **first** every sess
 | 3 | Detector: baseline + drop detection + cooldown   | ✅ done                        |
 | 4 | ntfy notifier                                    | ✅ done                        |
 | 5 | Cron orchestration + `config.json` loader        | ✅ done                        |
-| 6 | Termux deployment automation                     | not started                   |
+| 6 | Laptop deployment (systemd timer + services)     | ✅ done                        |
 
 **Rule**: do not start iteration N+1 before N runs end-to-end on the user's dev machine.
 
-## Status Iteration 1–5
+## Status Iteration 1–6
 
 Iteration 1 abgeschlossen: `browser.js` ruft URLs direkt über Puppeteer-Stealth ab. Cloudflare-Pass bestätigt auf Dev-Rechner und S9+.
 
@@ -61,7 +70,9 @@ Iteration 3 abgeschlossen: Detector + alerts-Tabelle + `npm run test:detector` (
 
 Iteration 4 abgeschlossen: ntfy-Notifier implementiert. `npm run test:notify` sendet Test-Push via `fetch` (native Node 18+). `dispatchPendingAlerts()` verarbeitet alle offenen DB-Alerts und setzt `notified = 1`. Kein neuer Dependency nötig.
 
-Iteration 5 abgeschlossen: `config.json` + `src/config/config.js` + `cron-tracker.js`. Multi-Card-Cron-Orchestrator verarbeitet alle Config-Karten sequenziell (2s Delay), dispatcht ntfy-Alerts. `npm run cron:dry` für Smoke-Tests ohne DB-Writes. **Ready for Termux deployment.**
+Iteration 5 abgeschlossen: `config.json` + `src/config/config.js` + `cron-tracker.js`. Multi-Card-Cron-Orchestrator verarbeitet alle Config-Karten sequenziell (45–60s Jitter-Delay — Cardmarket 429t nach ~5 schnellen Requests; ein Retry nach 90s bei 429), dispatcht ntfy-Alerts. `npm run cron:dry` für Smoke-Tests ohne DB-Writes.
+
+Iteration 6 abgeschlossen (Juli 2026): Deployment-Ziel von S9+/Termux auf den Acer-Laptop (Linux Mint 22.2) umgezogen. systemd-User-Units unter `deploy/` (`mtg-tracker.timer` stündlich + `mtg-web-ui.service`), Installation via `deploy/install.sh` + `loginctl enable-linger`. WAL-Modus in `db.js` wieder aktiv (der „s9 fix" d38eb51 war nur ein Termux-Filesystem-Workaround). Web-UI (`web-ui.js` + `src/web/index.html`, entstanden zwischen Iteration 5 und 6) ist damit dauerhaft im Heimnetz und via Tailscale erreichbar.
 
 ## Code Conventions
 
@@ -96,6 +107,16 @@ src/notifier/
   ntfy.js       sendAlert(alert, options) → { success, error? } — HTTP POST to ntfy.sh
   dispatcher.js dispatchPendingAlerts(options) → { processed, sent, failed[] }
                 reads DB alerts (notified=0), sends via ntfy, marks notified=1
+src/web/
+  index.html    Vue 3 + Tailwind (CDN) single-page watchlist manager
+web-ui.js       node:http server on 0.0.0.0:3000 (no framework, no auth).
+                GET / → index.html; GET/POST /api/cards, DELETE /api/cards/:name
+                (edits config.json); GET /api/slugs, /api/history/:slug (SQLite)
+deploy/
+  mtg-tracker.service   oneshot: node cron-tracker.js
+  mtg-tracker.timer     hourly, Persistent=true, RandomizedDelaySec=300
+  mtg-web-ui.service    long-running web UI, Restart=on-failure
+  install.sh            symlinks units to ~/.config/systemd/user + enable --now
 cron-tracker.js Main orchestrator: loads config, scrapes all cards, detects + dispatches
 test-scraper.js CLI for single-card testing. Flags: --dump-html, --persist, --config N
 test-detector.js Simulation CLI: in-memory DB, 5 test cases, no real scraping
@@ -124,12 +145,24 @@ node cron-tracker.js --card 0     # process only card index 0
 npm run history                   # overview: last 3 scans per card
 npm run history modern-masters-2015/mox-opal        # last 10 scans for card
 npm run history modern-masters-2015/mox-opal 20     # last 20 scans
-WARMUP_HEADFUL=1 npm run test:scraper  # sichtbares Chromium via WSLg
+WARMUP_HEADFUL=1 npm run test:scraper  # sichtbares Chromium (headful)
+npm run cards:web                 # web UI on http://0.0.0.0:3000 (foreground; prod runs via systemd)
 ```
 
-### System deps on WSL/Ubuntu
+### Deployment ops (laptop)
 
-Puppeteer's bundled Chromium needs these, not present by default:
+```bash
+deploy/install.sh                              # (re-)install + enable systemd user units
+sudo loginctl enable-linger melvin             # once: units survive logout / run at boot
+systemctl --user list-timers mtg-tracker.timer # next scheduled run
+systemctl --user start mtg-tracker.service     # trigger a run manually
+journalctl --user -u mtg-tracker -n 50         # tracker logs
+journalctl --user -u mtg-web-ui -n 50          # web UI logs
+```
+
+### System deps on Ubuntu/Mint
+
+Puppeteer's bundled Chromium needs these (on Mint 22.2 all already present, partly as `t64` variants):
 
 ```
 libnss3 libatk-bridge2.0-0 libatk1.0-0 libcups2 libdrm2
@@ -139,7 +172,11 @@ libgbm1 libpango-1.0-0 libcairo2 libasound2t64
 
 Use `libasound2` instead of `libasound2t64` on Ubuntu < 24.04.
 
-### Termux (S9+) — for iteration 6
+### Gotcha: Chrome + gnome-keyring outside the desktop session
+
+When Chrome (new headless or headful) is launched with `DBUS_SESSION_BUS_ADDRESS` set but no unlocked desktop keyring (systemd unit, SSH, cron), its network service blocks forever on gnome-keyring's Secret Service DBus API: **every http(s) navigation times out** while `about:blank`/`file://` work. Cost us hours in July 2026 — looked like a network/CF problem but wasn't. Fix lives in `browser.js`: the child env is stripped of `DBUS_SESSION_BUS_ADDRESS` and `--password-store=basic` is passed. Don't remove either.
+
+### Termux (S9+) — legacy, abandoned deployment path
 
 ```bash
 pkg install tur-repo

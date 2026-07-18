@@ -3,6 +3,8 @@ package-lock.json
 data/cookies.json
 data/last-response.html
 data/history.db
+data/history.db-shm
+data/history.db-wal
 data/*.log
 cron.log
 .env

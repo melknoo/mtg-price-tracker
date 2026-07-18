@@ -160,7 +160,7 @@ async function main() {
   server.listen(PORT, '0.0.0.0', () => {
     console.log('\nMTG Price Tracker — Web UI');
     console.log(`Lokal:    http://localhost:${PORT}`);
-    console.log(`Netzwerk: http://<S9-IP>:${PORT}`);
+    console.log(`Netzwerk: http://<Laptop-LAN-IP>:${PORT} (Tailscale: http://<Tailscale-IP>:${PORT})`);
     console.log('\nCTRL+C zum Beenden\n');
   });
 

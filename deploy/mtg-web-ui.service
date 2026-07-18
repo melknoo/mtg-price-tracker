@@ -1,0 +1,11 @@
+[Unit]
+Description=MTG price tracker web UI (port 3000)
+
+[Service]
+WorkingDirectory=%h/Repositories/mtg-price-tracker
+ExecStart=/usr/bin/node web-ui.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

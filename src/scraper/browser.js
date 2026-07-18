@@ -21,14 +21,23 @@ export async function fetchViaBrowser(url) {
   const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
   const headful = process.env.WARMUP_HEADFUL === '1';
 
+  // Hide the DBus session bus from Chrome. With it visible, Chrome's network
+  // service blocks forever on gnome-keyring's Secret Service API when launched
+  // outside an unlocked desktop session (systemd unit, SSH, cron): every http(s)
+  // navigation times out. --password-store=basic alone only fixes this on
+  // Chrome >= ~140, so strip the env var for older bundled versions too.
+  const { DBUS_SESSION_BUS_ADDRESS: _dbus, ...childEnv } = process.env;
+
   const browser = await puppeteer.launch({
     headless: headful ? false : 'new',
     executablePath,
+    env: childEnv,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-blink-features=AutomationControlled',
+      '--password-store=basic',
     ],
   });
 

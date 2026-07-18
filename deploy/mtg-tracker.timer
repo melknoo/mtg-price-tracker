@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly MTG price tracker run
+
+[Timer]
+OnCalendar=hourly
+# Catch up on runs missed while the laptop was off or asleep
+Persistent=true
+# Don't hit Cardmarket at exactly the top of the hour every time
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

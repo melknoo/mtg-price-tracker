@@ -22,12 +22,23 @@ const flags = {
   verbose: args.includes('--verbose') || args.includes('-v'),
 };
 
+async function scrapeWithRetry(cardConfig, logPrefix) {
+  try {
+    return await scrapeCard(cardConfig);
+  } catch (error) {
+    if (!/HTTP 429/.test(error.message)) throw error;
+    console.log(`${logPrefix} Rate limited (HTTP 429), retrying in 90s...`);
+    await new Promise(r => setTimeout(r, 90000));
+    return scrapeCard(cardConfig);
+  }
+}
+
 async function processCard(cardConfig, cardIndex, totalCards) {
   const logPrefix = `[${cardIndex + 1}/${totalCards}] ${cardConfig.name}:`;
 
   try {
     console.log(`${logPrefix} Scraping...`);
-    const scrapeResult = await scrapeCard(cardConfig);
+    const scrapeResult = await scrapeWithRetry(cardConfig, logPrefix);
 
     if (scrapeResult.prices.length === 0) {
       console.log(`${logPrefix} No listings found`);
@@ -128,9 +139,10 @@ async function main() {
       else if (result.skipped) results.skipped++;
       else results.processed++;
 
-      // 2s delay between cards to be polite to Cardmarket
+      // 45-60s jittered delay between cards — Cardmarket rate-limits (HTTP 429)
+      // aggressively; 20-30s spacing still produced 429s mid-run
       if (cardsToProcess.indexOf(cardEntry) < cardsToProcess.length - 1) {
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 45000 + Math.floor(Math.random() * 15000)));
       }
     }
 

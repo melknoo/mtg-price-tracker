@@ -1,83 +1,59 @@
 # MTG Price Tracker
 
-Cardmarket price tracker with ntfy push notifications. Runs on a Samsung Galaxy S9+ under Termux, pushes alerts to any device with the ntfy app installed.
+Cardmarket price tracker with ntfy push notifications. Runs on a home Linux laptop, scrapes a user-defined card watchlist hourly, and pushes an alert to the phone (ntfy app) when a card's current price drops meaningfully below its rolling 30-day baseline.
 
-## Status: Iteration 1 — Scraper + Parser
+## How it works
 
-Current goal: prove we can reliably fetch a Cardmarket product page, pass Cloudflare, and extract a clean sorted price list.
-
-Not yet built:
-- Persistent price history (SQLite)
-- Drop-detection logic + 30-day baseline
-- ntfy push notifier
-- Cron orchestration
-- Termux setup automation
-
-## Setup (dev machine first, not Termux yet)
-
-```bash
-cd mtg-price-tracker
-npm install
+```
+hourly systemd timer
+  → puppeteer-stealth fetch (Cloudflare pass)
+  → cheerio parser (price list, fallback selectors)
+  → SQLite (scans, alerts)
+  → detector (30-day MIN baseline, 3rd-lowest price, cooldown)
+  → ntfy.sh push → phone
 ```
 
-Puppeteer will download its own Chromium on first install. On the S9+ later, we'll override this to use the system-installed Chromium from `tur-repo`.
+A separate web UI (`web-ui.js`, port 3000) manages the watchlist (`config.json`) and shows price history from SQLite.
 
-## Testing
-
-### 1. Normal scrape (tries light fetch, falls back to Puppeteer warmup)
+## Setup
 
 ```bash
-npm run test:scraper
+npm install          # downloads Chromium (~/.cache/puppeteer), compiles better-sqlite3
+npm run test:scraper # verify Cloudflare pass + parser
+npm run test:notify  # test push to the configured ntfy topic
 ```
 
-Expected output on success: a table of the 10 cheapest Mox Opal listings matching the default filters, plus the 3rd-lowest price (the value the detector will later use as "current").
+Requires Node ≥ 20 and Chromium's system libraries (present by default on Linux Mint 22.2 / Ubuntu 24.04 desktop; see CLAUDE.md for the package list).
 
-### 2. Dump raw HTML for selector debugging
+## Deployment (systemd user units)
 
 ```bash
-npm run test:dump
+deploy/install.sh                   # symlinks units to ~/.config/systemd/user, enables timer + web UI
+sudo loginctl enable-linger $USER   # once: units run at boot without a login session
 ```
 
-Saves `data/last-response.html`. Open it in a browser and inspect the actual DOM — if `parser.js` returns 0 listings while the HTML clearly has them, the selectors in `parsePrices()` need tuning.
+- `mtg-tracker.timer` — hourly scrape+detect+notify run (`Persistent=true`: missed runs are caught up after suspend/poweroff).
+- `mtg-web-ui.service` — web UI on `http://0.0.0.0:3000`, auto-restart.
 
-### 3. Force a warmup
+Logs: `journalctl --user -u mtg-tracker` / `-u mtg-web-ui`.
 
-```bash
-npm run warmup
-```
+## Web UI access
 
-Runs only the Puppeteer stealth phase to refresh Cloudflare cookies. Call this if you've been getting `cf_block` or `cf_challenge` errors repeatedly.
+- Home LAN: `http://<laptop-ip>:3000`
+- Remote via Tailscale: `http://<tailscale-ip>:3000` from any device in the tailnet — works out of the box because the server binds `0.0.0.0`.
+
+**Security note**: the web UI has no authentication and the ntfy topic is only as private as its name. Keep the UI inside LAN/tailnet; don't port-forward it.
+
+## Configuration
+
+`config.json` (versioned): ntfy topic, default Cardmarket filters, alert threshold/cooldown, and the card list. Edit via the web UI or by hand. Each hourly run starts a fresh process, so changes are picked up automatically.
+
+## Commands
+
+See CLAUDE.md for the full command reference (`test:*`, `cron*`, `history`, `cards:web`, deployment ops).
 
 ## Troubleshooting
 
-**`cf_challenge` or `cf_block`:** Cloudflare flagged the light fetch. The warmup should normally run automatically, but if it fails too: `npm run warmup` manually, then retry `test:scraper`.
-
-**0 listings found but HTML looks fine:** Cardmarket changed their DOM. Open `data/last-response.html`, find a listing, copy its surrounding selector, and update `parser.js`. The parser has fallback selectors — add yours to the candidate list.
-
-**Puppeteer fails to launch on Termux:** You need system Chromium:
-```bash
-pkg install tur-repo
-pkg install chromium
-export PUPPETEER_EXECUTABLE_PATH=$(which chromium)
-export PUPPETEER_SKIP_DOWNLOAD=true
-```
-Add those exports to `~/.bashrc`.
-
-## Project layout
-
-```
-src/scraper/
-  cookies.js   # tough-cookie persistence to data/cookies.json
-  fetcher.js   # got + browser headers + CF challenge detection
-  warmup.js    # puppeteer-extra-stealth → captures CF cookies
-  parser.js    # cheerio → price[] with fallback selectors
-  index.js     # orchestrator: light fetch → warmup on fail → parse
-test-scraper.js
-```
-
-## Next iteration
-
-Once the scraper reliably returns sensible prices for a handful of real cards, we add:
-- SQLite schema for `scans` and `alerts`
-- `detector.js` with 30-day-baseline + 3rd-lowest-price + warmup window logic
-- Per-card `alertThresholdPercent` override
+- **`cf_challenge` / `cf_block`**: Cloudflare flagged the fetch. Usually transient — the next hourly run retries. Persistent blocks: run `WARMUP_HEADFUL=1 npm run test:scraper` and inspect.
+- **0 listings but HTML looks fine**: Cardmarket changed their DOM. `npm run test:dump`, open `data/last-response.html`, add a matching selector to the candidate list in `src/scraper/parser.js`.
+- **No pushes arriving**: `npm run test:notify` — if that arrives, check `journalctl --user -u mtg-tracker` for detector output (warmup window, cooldown, threshold).
