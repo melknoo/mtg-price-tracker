@@ -66,6 +66,12 @@
       "name": "Force of Negation",
       "url": "https://www.cardmarket.com/de/Magic/Cards/Force-of-Negation",
       "filters": "sellerCountry=7&sellerReputation=1&language=1,3&minCondition=4&isSigned=N&isAltered=N&amount=1"
+    },
+    {
+      "name": "The Great Henge",
+      "url": "https://www.cardmarket.com/de/Magic/Cards/The-Great-Henge",
+      "alertThresholdPercent": 10,
+      "filters": "sellerCountry=7&sellerReputation=1&language=1,3&minCondition=4&isSigned=N&isAltered=N&amount=1"
     }
   ]
 }

@@ -74,6 +74,31 @@ Iteration 5 abgeschlossen: `config.json` + `src/config/config.js` + `cron-tracke
 
 Iteration 6 abgeschlossen (Juli 2026): Deployment-Ziel von S9+/Termux auf den Acer-Laptop (Linux Mint 22.2) umgezogen. systemd-User-Units unter `deploy/` (`mtg-tracker.timer` stündlich + `mtg-web-ui.service`), Installation via `deploy/install.sh` + `loginctl enable-linger`. WAL-Modus in `db.js` wieder aktiv (der „s9 fix" d38eb51 war nur ein Termux-Filesystem-Workaround). Web-UI (`web-ui.js` + `src/web/index.html`, entstanden zwischen Iteration 5 und 6) ist damit dauerhaft im Heimnetz und via Tailscale erreichbar.
 
+## Open Issues (Oct 2026) — no push notifications
+
+Diagnosed 2026-10-22. **Two independent root causes**; neither is "thresholds slightly too high". Full plan: see "Next steps" below.
+
+### 1. Scraper hard-blocked by Cloudflare since 2026-09-25
+
+- Last successful scan: `2026-09-25T13:21Z` (14,480 scans total in `data/history.db`). Since then every hourly run logs `Errors: 13`, all `http_error (HTTP 403)`.
+- Response is `Attention Required! | Cloudflare` — a hard WAF block, **not** a JS challenge. Affects IPv4 (209.198.153.27) and IPv6, and plain `curl` too. Bursts of 429s preceded it.
+- systemd timer/service themselves are fine (exit 0), which is why the outage went unnoticed for 4 weeks.
+- **Open question:** does a normal desktop browser on the laptop (same IP) get blocked too? Yes → IP ban (pause, then lower frequency). No → Puppeteer fingerprint (persistent `userDataDir`, update Puppeteer, one browser per run).
+
+### 2. Detector can practically never fire
+
+- MIN-baseline ⇒ an alert requires a *new 30-day low* that is ≥ threshold below the previous low. The `alerts` table is **empty**: no alert has ever fired.
+- Over ~14k detections: max drop 10.0 %, median −5.3 % (negative = above baseline).
+- Backtest with a **median** baseline (30d window, 48h warmup, 12h cooldown) on the stored history (2026-07-18 → 09-25): 15 % → 0 alerts, 20 % → 0, **10 % → 19 alerts** (13× Badgermole Cub, 3× Wan Shi Tong, 2× Tropical Island, 1× Mox Opal).
+- **User decision: switch to median baseline + 10 % default threshold.** Drop the per-card overrides.
+
+### Next steps
+
+1. Detector: `Math.min` → median of non-null `third_lowest_price` in `src/detector/detector.js`. Set `DEFAULT_THRESHOLD_PERCENT` = 10 and `config.json` `defaults.alertThresholdPercent` = 10, then remove the per-card overrides. Adapt `test-detector.js`: the cooldown tests rely on MIN semantics. Update "Detector Logic" below.
+2. Health check in `cron-tracker.js`: if a run has 0 successes and errors > 0, send an ntfy push (throttled to 1×/24h, timestamp under `data/`). This is so a silent outage can't happen again.
+3. Fix the 403 depending on the browser test above. Do **not** touch the DBus/`--password-store` workaround in `browser.js`.
+4. Verify: `npm run test:detector`, `node cron-tracker.js --dry-run --card 0`, `npm run test:notify`, then `journalctl --user -u mtg-tracker` shows `Processed > 0`.
+
 ## Code Conventions
 
 - **Language**: communicate with the user **in German**. Code, comments, commit messages, READMEs, variable names, file names: **English**.
@@ -217,7 +242,7 @@ Plus Samsung-specific: exclude Termux from battery optimization AND add to "Apps
 
 Per-card fields (`filters`, `alertThresholdPercent`) override `defaults`. `name` + `url` are required. User pastes the product URL directly from their browser; filters appended as query string. `alertCooldownHours` is system-wide only (not per-card). `config.json` is cached for the process lifetime — restart cron to pick up changes.
 
-## Detector Logic *(iteration 3, done)*
+## Detector Logic *(iteration 3, done — baseline switching MIN → MEDIAN, see Open Issues)*
 
 ```
 baseline = MIN( third_lowest_price_per_scan ) over last 30 days
